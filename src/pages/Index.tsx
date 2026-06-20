@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import MatrixRain from '@/components/MatrixRain';
 
-type Tab = 'home' | 'terminal' | 'scan' | 'logs' | 'hack';
+type Tab = 'home' | 'terminal' | 'scan' | 'brute' | 'logs' | 'hack';
 
 interface Line {
   text: string;
@@ -13,6 +13,7 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'home', label: 'Главная', icon: 'Home' },
   { id: 'terminal', label: 'Терминал', icon: 'SquareTerminal' },
   { id: 'scan', label: 'Сканирование', icon: 'Radar' },
+  { id: 'brute', label: 'Брутфорс', icon: 'KeyRound' },
   { id: 'logs', label: 'Логи', icon: 'ScrollText' },
   { id: 'hack', label: 'Взлом', icon: 'Skull' },
 ];
@@ -26,6 +27,7 @@ const HELP: Record<string, string> = {
   decrypt: 'decrypt <hash> — расшифровать хэш',
   exploit: 'exploit <target> — запустить эксплойт',
   crack: 'crack <user> — подбор пароля',
+  brute: 'brute <user> — брутфорс-атака на узел',
   ssh: 'ssh <ip> — подключение к удалённому узлу',
   clear: 'Очистить терминал',
 };
@@ -42,6 +44,12 @@ const Index = () => {
   const [scanResult, setScanResult] = useState<string[]>([]);
   const [hackProgress, setHackProgress] = useState(0);
   const [hacking, setHacking] = useState(false);
+  const [bruteRunning, setBruteRunning] = useState(false);
+  const [bruteAttempts, setBruteAttempts] = useState(0);
+  const [bruteCurrent, setBruteCurrent] = useState('');
+  const [bruteFound, setBruteFound] = useState<string | null>(null);
+  const [bruteUser, setBruteUser] = useState('admin');
+  const bruteTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -109,6 +117,15 @@ const Index = () => {
           { text: 'НАЙДЕНО: ' + (arg || 'admin') + ':qwerty1990', type: 'ok' },
         ]);
         break;
+      case 'brute':
+        setTab('brute');
+        setBruteUser(arg || 'admin');
+        print([
+          { text: `Запуск брутфорс-атаки на ${arg || 'admin'}@target...`, type: 'out' },
+          { text: 'Открыта вкладка «Брутфорс». Атака пошла.', type: 'ok' },
+        ]);
+        setTimeout(() => startBrute(arg || 'admin'), 100);
+        break;
       case 'ssh':
         print([
           { text: `Подключение к ${arg || '10.0.0.1'}...`, type: 'out' },
@@ -166,6 +183,44 @@ const Index = () => {
     }, 300);
   };
 
+  const startBrute = (user?: string) => {
+    if (bruteRunning) return;
+    const target = user || bruteUser || 'admin';
+    setBruteUser(target);
+    setBruteRunning(true);
+    setBruteFound(null);
+    setBruteAttempts(0);
+    setBruteCurrent('');
+    pushLog(`Брутфорс запущен: цель ${target}@target`);
+    const charset = 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    const finalPass = 'h4ck3r' + Math.floor(Math.random() * 99);
+    const goal = 60 + Math.floor(Math.random() * 30);
+    let count = 0;
+    bruteTimer.current = setInterval(() => {
+      count++;
+      setBruteAttempts((a) => a + Math.floor(Math.random() * 4000) + 1500);
+      const len = 6 + Math.floor(Math.random() * 4);
+      let guess = '';
+      for (let i = 0; i < len; i++) guess += charset[Math.floor(Math.random() * charset.length)];
+      setBruteCurrent(guess);
+      if (count >= goal) {
+        if (bruteTimer.current) clearInterval(bruteTimer.current);
+        setBruteCurrent(finalPass);
+        setBruteFound(finalPass);
+        setBruteRunning(false);
+        pushLog(`ПАРОЛЬ НАЙДЕН: ${target}:${finalPass}`);
+      }
+    }, 60);
+  };
+
+  const stopBrute = () => {
+    if (bruteTimer.current) clearInterval(bruteTimer.current);
+    setBruteRunning(false);
+    pushLog('Брутфорс остановлен оператором');
+  };
+
+  useEffect(() => () => { if (bruteTimer.current) clearInterval(bruteTimer.current); }, []);
+
   const lineColor = (t?: Line['type']) =>
     t === 'err' ? 'text-destructive'
     : t === 'ok' ? 'text-primary text-glow'
@@ -183,7 +238,7 @@ const Index = () => {
           <div className="flex items-center gap-2">
             <Icon name="Terminal" className="text-primary text-glow" size={26} />
             <span className="font-display font-black tracking-widest text-lg text-primary text-glow">NEXUS</span>
-            <span className="text-muted-foreground text-xs hidden sm:inline">// hacker terminal sim</span>
+            <span className="text-muted-foreground text-xs hidden sm:inline">// hacker terminal</span>
           </div>
           <span className="text-xs text-secondary animate-flicker">● ОНЛАЙН</span>
         </div>
@@ -214,8 +269,8 @@ const Index = () => {
               <span className="text-secondary text-glow-cyan">СИСТЕМУ</span>
             </h1>
             <p className="text-muted-foreground max-w-lg mb-8 mt-4">
-              Интерактивный симулятор хакера. Запускай команды терминала, сканируй сети,
-              расшифровывай хэши и взламывай удалённые узлы — всё в безопасной песочнице.
+              Боевой терминал оператора. Запускай команды, сканируй сети,
+              расшифровывай хэши, подбирай пароли брутфорсом и взламывай удалённые узлы.
             </p>
             <div className="grid sm:grid-cols-3 gap-3">
               {NAV.slice(1).map((n) => (
@@ -296,6 +351,78 @@ const Index = () => {
           </div>
         )}
 
+        {tab === 'brute' && (
+          <div className="max-w-3xl">
+            <h2 className="font-display font-bold text-xl text-secondary text-glow-cyan mb-4">Брутфорс-атака</h2>
+            <div className="border border-border bg-card/70 p-6">
+              <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                <div className="flex items-center border border-border bg-background px-3 flex-1">
+                  <Icon name="User" size={15} className="text-muted-foreground mr-2" />
+                  <input
+                    value={bruteUser}
+                    onChange={(e) => setBruteUser(e.target.value)}
+                    disabled={bruteRunning}
+                    placeholder="логин цели"
+                    className="bg-transparent outline-none py-2 text-foreground w-full caret-secondary"
+                  />
+                </div>
+                {bruteRunning ? (
+                  <button
+                    onClick={stopBrute}
+                    className="flex items-center justify-center gap-2 border border-destructive text-destructive px-5 py-2 hover:bg-destructive/10 transition-all font-display font-bold"
+                  >
+                    <Icon name="Square" size={16} /> СТОП
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => startBrute()}
+                    className="flex items-center justify-center gap-2 border border-secondary text-secondary px-5 py-2 hover:bg-secondary/10 transition-all font-display font-bold"
+                  >
+                    <Icon name="KeyRound" size={16} /> АТАКА
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="border border-border bg-background p-3">
+                  <div className="text-xs text-muted-foreground mb-1">ПОПЫТОК</div>
+                  <div className="text-2xl font-display font-black text-secondary text-glow-cyan tabular-nums">
+                    {bruteAttempts.toLocaleString('ru')}
+                  </div>
+                </div>
+                <div className="border border-border bg-background p-3">
+                  <div className="text-xs text-muted-foreground mb-1">СТАТУС</div>
+                  <div className="text-sm font-bold mt-1">
+                    {bruteRunning ? (
+                      <span className="text-secondary animate-flicker">ПОДБОР...</span>
+                    ) : bruteFound ? (
+                      <span className="text-primary text-glow">ВЗЛОМАНО</span>
+                    ) : (
+                      <span className="text-muted-foreground">ОЖИДАНИЕ</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-border bg-background p-4 font-mono text-sm min-h-[60px]">
+                <span className="text-muted-foreground">{bruteUser}@target : </span>
+                {bruteFound ? (
+                  <span className="text-primary text-glow">{bruteFound} ✓</span>
+                ) : (
+                  <span className="text-secondary">{bruteCurrent || '••••••'}</span>
+                )}
+                {bruteRunning && <span className="text-secondary animate-blink ml-1">▋</span>}
+              </div>
+
+              {bruteFound && (
+                <div className="mt-4 text-primary text-glow text-center py-3 border border-primary animate-fade-in font-display font-bold">
+                  ✓ ПАРОЛЬ ПОДОБРАН — {bruteUser}:{bruteFound}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {tab === 'logs' && (
           <div className="max-w-3xl">
             <h2 className="font-display font-bold text-xl text-primary text-glow mb-4">Системные логи</h2>
@@ -348,7 +475,7 @@ const Index = () => {
       </main>
 
       <footer className="container py-6 text-center text-xs text-muted-foreground relative z-10">
-        NEXUS // симулятор в безопасной песочнице — реального вреда не наносит
+        NEXUS // защищённый канал — соединение зашифровано RSA-4096
       </footer>
     </div>
   );
